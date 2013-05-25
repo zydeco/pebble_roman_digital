@@ -246,28 +246,22 @@ void handle_init(AppContextRef ctx) {
 void handle_tick(AppContextRef ctx, PebbleTickEvent *t) {
   (void)t;
   get_time(&g.time);
-  bool update = 1;
+  
 #if defined(CONFIG_SHOW_SECONDS)
   layer_mark_dirty(&g.layers.second);
-  update = (g.time.tm_sec == 0);
+  if (g.time.tm_sec != 0) return;
 #endif
   
-  // update minutes?
-  if (update) {
-    layer_mark_dirty(&g.layers.minute);
-    update = (g.time.tm_min == 0);
-  }
+  // update minutes
+  layer_mark_dirty(&g.layers.minute);
+  if (g.time.tm_min != 0) return;
   
-  // update hours?
-  if (update) {
-    layer_mark_dirty(&g.layers.hour);
-    update = (g.time.tm_hour == 0);
-  }
+  // update hours
+  layer_mark_dirty(&g.layers.hour);
+  if (g.time.tm_hour != 0) return;
   
   // update date
-  if (update) {
-    layer_mark_dirty(&g.layers.date);
-  }
+  layer_mark_dirty(&g.layers.date);
 }
 
 void pbl_main(void *params) {
