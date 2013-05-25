@@ -3,6 +3,13 @@ _by Jesús A. Álvarez_
 
 Date and time in roman numerals, with 12/24h option
 
+## Configuration Options (in config.h)
+
+Change these options to build the watchface with different settings:
+
+ *  **`CONFIG_SHOW_SECONDS`**: enable to show a line with seconds under the minutes
+ *  **`CONFIG_DATE_MD`**: enable to show date in month-day format, otherwise it will show day-month
+
 ## License
 
 Copyright (C) 2013 Jesús A. Álvarez
