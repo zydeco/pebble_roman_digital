@@ -1,59 +1,40 @@
-#include "pebble_os.h"
-#include "pebble_app.h"
-#include "pebble_fonts.h"
-#include "config.h"
-
-#define MY_UUID { 0xAC, 0xB9, 0x74, 0x69, 0xE8, 0x88, 0x49, 0x15, 0x9E, 0xC6, 0x2B, 0xC6, 0x0F, 0x58, 0x6F, 0x5C }
-PBL_APP_INFO(
-  MY_UUID,
-  "Roman Digital", "namedfork.net",
-  1, 1, /* App version */
-  RESOURCE_ID_IMAGE_MENU_ICON,
-  APP_INFO_WATCH_FACE);
+#include "pebble.h"
 
 static struct {
-  Window window;
-  struct { 
-    Layer bg, date, hour, minute, second;
-    } layers;
-  PblTm time;
+  Window *window;
+  struct tm time;
+  int32_t config;
 } g;
 
-#if defined(CONFIG_SHOW_SECONDS)
-// date, hour, minute, seconds
-#define SEP_HEIGHT 5
-#define TICK_UNIT SECOND_UNIT
-#define DATE_RECT GRect(4, 4, 136, 34)
-#define HOUR_RECT GRect(4, 33, 136, 83)
-#define MINUTE_RECT GRect(4, 111, 136, 29)
-#define SECOND_RECT GRect(4, 135, 136, 29)
-#else
-// date, hour, minute
-#define SEP_HEIGHT 7
-#define TICK_UNIT MINUTE_UNIT
-#define DATE_RECT GRect(4, 8, 136, 40)
-#define HOUR_RECT GRect(4, 41, 136, 91)
-#define MINUTE_RECT GRect(4, 125, 136, 35)
-#endif
+#define APPMESSAGE_UPDATE_CONFIG 0xCC
+#define CONFIG_PERSIST_KEY 0xC0
+#define CONFIG_SHOW_SECONDS 1
+#define CONFIG_DATE_MD 2
+
+// these things used to be constants
+int SEP_HEIGHT;
+TimeUnits TICK_UNIT;
+GRect DATE_RECT, HOUR_RECT, MINUTE_RECT, SECOND_RECT;
 
 void draw_l(GContext *ctx, GRect rect) {
   int16_t w = rect.size.w / 4.f;
   graphics_fill_rect(ctx, GRect(rect.origin.x,rect.origin.y,w,rect.size.h), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(rect.origin.x,rect.origin.y+rect.size.h-w,rect.size.w,rect.size.h), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(rect.origin.x,rect.origin.y+rect.size.h-w,rect.size.w,w), 0, GCornerNone);
 }
 
 void draw_x(GContext *ctx, GRect rect) {
-  int16_t w1 = rect.size.w / 4.f;
-  int16_t w2 = rect.size.w / 4.f;
+  int16_t w1 = rect.size.w / 4;
+  int16_t w2 = rect.size.w / 4;
+  APP_LOG(255, "draw_x %d,%d,%d*%d (%d,%d)", rect.origin.x, rect.origin.y, rect.size.w, rect.size.h, w1, w2);
   GPath path1 = {
     .num_points = 4,
-    .points = (GPoint[]) { {0, 0}, {rect.size.w - w1, rect.size.h}, {rect.size.w, rect.size.h}, {w1, 0}},
+    .points = (GPoint[]) { {0, 0}, {rect.size.w - w1, rect.size.h-1}, {rect.size.w, rect.size.h-1}, {w1, 0}},
     .rotation = 0,
     .offset = rect.origin
   };
   GPath path2 = {
     .num_points = 4,
-    .points = (GPoint[]) { {0, rect.size.h}, {rect.size.w - w1, 0}, {rect.size.w, 0}, {w2, rect.size.h}},
+    .points = (GPoint[]) { {0, rect.size.h-1}, {rect.size.w - w1, 0}, {rect.size.w, 0}, {w2, rect.size.h-1}},
     .rotation = 0,
     .offset = rect.origin
   };
@@ -62,18 +43,19 @@ void draw_x(GContext *ctx, GRect rect) {
 }
 
 void draw_v(GContext *ctx, GRect rect) {
+  APP_LOG(255, "draw_v %d,%d,%d*%d", rect.origin.x, rect.origin.y, rect.size.w, rect.size.h);
   int16_t w1 = rect.size.w / 4.f;
   int16_t w2 = rect.size.w / 4.f;
   int16_t mp1 = (rect.size.w + w1) / 2;
   GPath path1 = {
     .num_points = 4,
-    .points = (GPoint[]) { {0, 0}, {mp1 - w1, rect.size.h}, {mp1, rect.size.h}, {w1, 0}},
+    .points = (GPoint[]) { {0, 0}, {mp1 - w1, rect.size.h-1}, {mp1, rect.size.h-1}, {w1, 0}},
     .rotation = 0,
     .offset = rect.origin
   };
   GPath path2 = {
     .num_points = 4,
-    .points = (GPoint[]) { {mp1 - w2, rect.size.h}, {rect.size.w - w2, 0}, {rect.size.w, 0}, {mp1, rect.size.h}},
+    .points = (GPoint[]) { {mp1 - w2, rect.size.h-1}, {rect.size.w - w2, 0}, {rect.size.w, 0}, {mp1, rect.size.h-1}},
     .rotation = 0,
     .offset = rect.origin
   };
@@ -161,116 +143,116 @@ void draw_roman_number(int8_t n, GContext *ctx, GRect rect, int align) {
   }
 }
 
-void bg_update_proc(Layer *me, GContext *ctx) {
+void update_proc(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, me->bounds, 0, GCornerNone);
-}
-
-void date_update_proc(Layer *me, GContext *ctx) {
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
   graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, GRect(0, 0, me->bounds.size.w, SEP_HEIGHT), 0, GCornerNone);
   
-#if defined(CONFIG_DATE_MD)
-  int8_t date[2] = {g.time.tm_mon + 1, g.time.tm_mday};
-#else
-  int8_t date[2] = {g.time.tm_mday, g.time.tm_mon + 1};
-#endif
-
-  GRect rect = GRect(4, SEP_HEIGHT-1, (me->bounds.size.w - 8)/2, me->bounds.size.h - (SEP_HEIGHT*2) + 1);
-  draw_roman_number(date[0], ctx, rect, -1);
-  rect.origin.x += (me->bounds.size.w - 8)/2;
-  draw_roman_number(date[1], ctx, rect, 1);
-}
-
-void hour_update_proc(Layer *me, GContext *ctx) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, GRect(0, 0, me->bounds.size.w, SEP_HEIGHT), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(0, me->bounds.size.h - SEP_HEIGHT, me->bounds.size.w, me->bounds.size.h), 0, GCornerNone);
+  // date
+  bounds = DATE_RECT;
+  graphics_fill_rect(ctx, GRect(bounds.origin.x, bounds.origin.y, bounds.size.w, SEP_HEIGHT), 0, GCornerNone);
+  GRect rect = GRect(bounds.origin.x + 4, bounds.origin.y + (SEP_HEIGHT-1), (bounds.size.w - 8)/2, bounds.size.h - (SEP_HEIGHT*2) + 1);
+  draw_roman_number(g.config & CONFIG_DATE_MD ? g.time.tm_mon + 1 : g.time.tm_mday, ctx, rect, -1);
+  rect.origin.x += (bounds.size.w - 8)/2;
+  draw_roman_number(g.config & CONFIG_DATE_MD ? g.time.tm_mday : g.time.tm_mon + 1, ctx, rect, 1);
   
+  // hour
+  bounds = HOUR_RECT;
+  graphics_fill_rect(ctx, GRect(bounds.origin.x, bounds.origin.y, bounds.size.w, SEP_HEIGHT), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(bounds.origin.x, bounds.origin.y + (bounds.size.h - SEP_HEIGHT), bounds.size.w, SEP_HEIGHT), 0, GCornerNone);
   int8_t hour = g.time.tm_hour;
-  if (!clock_is_24h_style()) {
-    hour %= 12;
-  }
+  if (!clock_is_24h_style()) hour %= 12;
   if (hour == 0) hour = clock_is_24h_style() ? 24 : 12;
-  draw_roman_number(hour, ctx, GRect(8, SEP_HEIGHT-1, me->bounds.size.w - 16, me->bounds.size.h - (SEP_HEIGHT*2) + 1), 0);
+  draw_roman_number(hour, ctx, GRect(bounds.origin.x + 8, bounds.origin.y + (SEP_HEIGHT-1), bounds.size.w - 16, bounds.size.h - (SEP_HEIGHT*2) + 1), 0);
+  
+  // minute
+  bounds = MINUTE_RECT;
+  graphics_fill_rect(ctx, GRect(bounds.origin.x, bounds.origin.y + (bounds.size.h - SEP_HEIGHT), bounds.size.w, SEP_HEIGHT), 0, GCornerNone);
+  draw_roman_number(g.time.tm_min, ctx, GRect(bounds.origin.x, bounds.origin.y + (SEP_HEIGHT-1), bounds.size.w, bounds.size.h - (SEP_HEIGHT*2) + 1), 0);
+  
+  // second
+  if (g.config & CONFIG_SHOW_SECONDS) {
+    bounds = SECOND_RECT;
+    graphics_fill_rect(ctx, GRect(bounds.origin.x, bounds.origin.y + (bounds.size.h - SEP_HEIGHT), bounds.size.w, SEP_HEIGHT), 0, GCornerNone);
+    draw_roman_number(g.time.tm_sec, ctx, GRect(bounds.origin.x, bounds.origin.y + (SEP_HEIGHT-1), bounds.size.w, bounds.size.h - (SEP_HEIGHT*2) + 1), 0);
+  }
 }
 
-void minute_update_proc(Layer *me, GContext *ctx) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, GRect(0, me->bounds.size.h - SEP_HEIGHT, me->bounds.size.w, me->bounds.size.h), 0, GCornerNone);
+void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
+  if (tick_time == NULL) {
+    time_t tm = time(NULL);
+    g.time = *(localtime(&tm));
+    return;
+  }
+  g.time = *tick_time;
   
-  draw_roman_number(g.time.tm_min, ctx, GRect(0, SEP_HEIGHT-1, me->bounds.size.w, me->bounds.size.h - (SEP_HEIGHT*2) + 1), 0);
+  layer_mark_dirty(window_get_root_layer(g.window));
 }
 
-#if defined(CONFIG_SHOW_SECONDS)
-void second_update_proc(Layer *me, GContext *ctx) {
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, GRect(0, me->bounds.size.h - SEP_HEIGHT, me->bounds.size.w, me->bounds.size.h), 0, GCornerNone);
+void configure() {
+  // load configuration
+  if (persist_exists(CONFIG_PERSIST_KEY)) {
+    g.config = persist_read_int(CONFIG_PERSIST_KEY);
+  } else {
+    g.config = 0;
+  }
   
-  draw_roman_number(g.time.tm_sec, ctx, GRect(0, SEP_HEIGHT-1, me->bounds.size.w, me->bounds.size.h - (SEP_HEIGHT*2) + 1), 0);
-}
-#endif
-
-void handle_init(AppContextRef ctx) {
-  (void)ctx;
-
-  window_init(&g.window, "Horologium Digitale");
+  // set things
+  if (g.config & CONFIG_SHOW_SECONDS) {
+    SEP_HEIGHT = 5;
+    TICK_UNIT = SECOND_UNIT;
+    DATE_RECT = GRect(4, 4, 136, 34);
+    HOUR_RECT = GRect(4, 33, 136, 83);
+    MINUTE_RECT = GRect(4, 111, 136, 29);
+    SECOND_RECT = GRect(4, 135, 136, 29);
+  } else {
+    SEP_HEIGHT = 7;
+    TICK_UNIT = MINUTE_UNIT;
+    DATE_RECT = GRect(4, 8, 136, 40);
+    HOUR_RECT = GRect(4, 41, 136, 91);
+    MINUTE_RECT = GRect(4, 125, 136, 35);
+  }
   
-  // init layers
-  layer_init(&g.layers.bg, g.window.layer.frame);
-  g.layers.bg.update_proc = &bg_update_proc;
-  layer_add_child(&g.window.layer, &g.layers.bg);
-  
-  layer_init(&g.layers.date, DATE_RECT);
-  g.layers.date.update_proc = &date_update_proc;
-  layer_add_child(&g.layers.bg, &g.layers.date);
-  
-  layer_init(&g.layers.hour, HOUR_RECT);
-  g.layers.hour.update_proc = &hour_update_proc;
-  layer_add_child(&g.layers.bg, &g.layers.hour);
-  
-  layer_init(&g.layers.minute, MINUTE_RECT);
-  g.layers.minute.update_proc = &minute_update_proc;
-  layer_add_child(&g.layers.bg, &g.layers.minute);
-  
-#if defined(CONFIG_SHOW_SECONDS)
-  layer_init(&g.layers.second, SECOND_RECT);
-  g.layers.second.update_proc = &second_update_proc;
-  layer_add_child(&g.layers.bg, &g.layers.second);
-#endif
-  
-  get_time(&g.time);
-  window_stack_push(&g.window, true /* Animated */);
+  tick_timer_service_unsubscribe();
+  tick_timer_service_subscribe(TICK_UNIT, handle_tick);
 }
 
-void handle_tick(AppContextRef ctx, PebbleTickEvent *t) {
-  (void)t;
-  get_time(&g.time);
+void app_message_rcv(DictionaryIterator *iter, void *context) {
+  Tuple *config_tuple = dict_find(iter, APPMESSAGE_UPDATE_CONFIG);
   
-#if defined(CONFIG_SHOW_SECONDS)
-  layer_mark_dirty(&g.layers.second);
-  if (g.time.tm_sec != 0) return;
-#endif
-  
-  // update minutes
-  layer_mark_dirty(&g.layers.minute);
-  if (g.time.tm_min != 0) return;
-  
-  // update hours
-  layer_mark_dirty(&g.layers.hour);
-  if (g.time.tm_hour != 0) return;
-  
-  // update date
-  layer_mark_dirty(&g.layers.date);
+  if (config_tuple) {
+    persist_write_int(CONFIG_PERSIST_KEY, config_tuple->value->uint8);
+    configure();
+  }
 }
 
-void pbl_main(void *params) {
-  PebbleAppHandlers handlers = {
-    .init_handler = &handle_init,
-    .tick_info = {
-      .tick_handler = &handle_tick,
-      .tick_units = TICK_UNIT
-    }
-  };
-  app_event_loop(params, &handlers);
+void init() {
+  // load settings
+  configure();
+  
+  // init app message
+  app_message_register_inbox_received(app_message_rcv);
+  app_message_open(64, 64);
+  
+  // create window
+  g.window = window_create();
+  window_set_background_color(g.window, GColorBlack);
+  Layer *rootLayer = window_get_root_layer(g.window);
+  layer_set_update_proc(rootLayer, update_proc);
+  window_stack_push(g.window, true);
+  
+  // initial tick notification
+  handle_tick(NULL, TICK_UNIT);
+}
+
+void deinit() {
+  tick_timer_service_unsubscribe();
+  window_destroy(g.window);
+}
+
+int main(void) {
+    init();
+    app_event_loop();
+    deinit();
 }

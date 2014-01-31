@@ -3,16 +3,16 @@ _by Jesús A. Álvarez_
 
 Date and time in roman numerals, with 12/24h option
 
-## Configuration Options (in config.h)
+## Configuration
 
-Change these options to build the watchface with different settings:
+From the Pebble app on your phone, you can choose the following options:
 
- *  **`CONFIG_SHOW_SECONDS`**: enable to show a line with seconds under the minutes
- *  **`CONFIG_DATE_MD`**: enable to show date in month-day format, otherwise it will show day-month
+ *  Date format (day-month or month-day)
+ *  Show seconds
 
 ## License
 
-Copyright (C) 2013 Jesús A. Álvarez
+Copyright (C) 2013-2014 Jesús A. Álvarez
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License

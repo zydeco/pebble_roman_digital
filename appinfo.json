@@ -1,0 +1,25 @@
+{
+  "uuid": "acb97469-e888-4915-9ec6-2bc60f586f5c",
+  "shortName": "Roman Digital",
+  "longName": "Roman Digital",
+  "companyName": "namedfork",
+  "versionCode": 2,
+  "versionLabel": "2.0.0",
+  "watchapp": {
+    "watchface": true
+  },
+  "capabilities": [ "configurable" ],
+  "appKeys": {
+      "updateConfig": 204
+  },
+  "resources": {
+    "media": [
+      {
+        "menuIcon": true,
+        "type": "png",
+        "name": "IMAGE_MENU_ICON",
+        "file": "menu_icon.png"
+      }
+    ]
+  }
+}
